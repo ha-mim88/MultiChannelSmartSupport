@@ -15,7 +15,5 @@ builder.AddExecutable(
 
 builder.AddProject<Projects.frontend>("frontend");
 
-builder.AddProject<Projects.backend>("backend");
-
 
 builder.Build().Run();
