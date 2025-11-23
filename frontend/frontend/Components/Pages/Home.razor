@@ -1,0 +1,182 @@
+﻿@page "/"
+@using Markdig
+@using System.Text.Json
+@using Microsoft.AspNetCore.Components.Web
+@using System.Net
+@using System.Text.RegularExpressions
+@inject HttpClient Http
+@inject IConfiguration Configuration
+@rendermode InteractiveServer
+
+@* 
+PSEUDOCODE / PLAN (detailed):
+- Goal: Render chat message content in a "HTML/Word-like" format:
+  - Preserve actual line breaks and paragraphs.
+  - Handle cases where the backend returns literal escape sequences like "\n" (backslash + n).
+  - Render simple HTML if content appears to be HTML.
+  - Otherwise, escape HTML and convert real newlines to <br/> so text looks like Word paragraphs.
+- Steps inside RenderMessage:
+  1. If `content` is null/empty => return empty MarkupString.
+  2. Unescape common escaped sequences using `Regex.Unescape(content)` to convert literal "\n" into real newlines.
+  3. Remove the first and/or last quote characters if they exist (single or double quotes).
+     - If the string starts with a quote character (' or ") remove it.
+     - If the string ends with a quote character (' or ") remove it.
+     - This handles backend responses wrapped in quotes.
+  4. Detect if the unescaped content "looks like HTML" (contains '<' and '>'):
+     - If yes, return new MarkupString(unescaped) so HTML renders.
+     - If no, HtmlEncode unescaped content and replace newlines with "<br/>" so text looks like Word paragraphs.
+  5. Return MarkupString of processed HTML.
+*@
+
+<PageTitle>Home</PageTitle>
+
+<div class="chat-container">
+    <div class="chat-header">
+        <h2>Chat</h2>
+    </div>
+
+    <div class="input-row">
+        <input class="message-input" placeholder="Type a message..." @bind="Message" @bind:event="oninput" @onkeydown="HandleKeyDown" />
+        @if (isSending)
+        {
+            <div class="send-btn" disabled>...</div>
+        }
+        else
+        {
+            <button class="send-btn" @onclick="SendMessage">
+                Send
+            </button>
+        }
+    </div>
+
+    <div class="chat-window" @ref="chatWindowRef">
+        @if (messages.Count == 0)
+        {
+            <div class="empty">No messages yet. Say hello!</div>
+        }
+        @foreach (var m in messages.AsEnumerable().Reverse())
+        {
+            <div class="row">
+                <div class="message-row @(m.role == "user" ? "user-row" : "bot-row float-end")">
+                    <div class="avatar">@(m.role == "user" ? "You" : "Bot")</div>
+                    <div class="ai-response bubble @(m.role == "user" ? "bubble-user" : "bubble-bot")" style="white-space:pre-wrap; word-break:break-word">
+                        @RenderMessage(m.content)
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+</div>
+
+
+@code {
+    private string Message { get; set; } = string.Empty;
+    private List<ChatMessage> messages = new();
+    private bool isSending;
+    private ElementReference chatWindowRef;
+
+    private record ChatMessage(string content, string role = "user");
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(Message) || isSending)
+            return;
+
+        var userText = Message.Trim();
+        messages.Add(new ChatMessage(userText, "user"));
+        Message = string.Empty;
+        isSending = true;
+        var backend = Configuration["AIBackendHost"];
+        try
+        {
+            var dto = new { Message = userText };
+            // Use relative path so it works when app is hosted with the API
+            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
+            var response = await httpClient.PostAsJsonAsync(backend + "api/chat", new List<ChatMessage> { new(userText, "user") });
+
+
+            if (response.IsSuccessStatusCode)
+            {
+                var raw = await response.Content.ReadAsStringAsync();
+                string replyText;
+
+                try
+                {
+                    using var doc = JsonDocument.Parse(raw);
+                    if (doc.RootElement.TryGetProperty("reply", out var p) ||
+                        doc.RootElement.TryGetProperty("Reply", out p))
+                    {
+                        replyText = p.GetString() ?? raw;
+                    }
+                    else if (doc.RootElement.ValueKind == JsonValueKind.String)
+                    {
+                        replyText = doc.RootElement.GetString() ?? raw;
+                    }
+                    else
+                    {
+                        replyText = raw;
+                    }
+                }
+                catch
+                {
+                    replyText = raw;
+                }
+
+                messages.Add(new ChatMessage(replyText, "bot"));
+            }
+            else
+            {
+                messages.Add(new ChatMessage($"Error: {response.StatusCode}", "bot"));
+            }
+        }
+        catch (Exception ex)
+        {
+            messages.Add(new ChatMessage($"Network error: {ex.Message}", "bot"));
+        }
+        finally
+        {
+            isSending = false;
+            await ScrollToBottomAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SendMessage();
+        }
+    }
+
+    private async Task ScrollToBottomAsync()
+    {
+        try
+        {
+            // Simple scrolling via JS Interop would be ideal, but to avoid extra files we attempt a small focus trick:
+            // Focus the input then blur to nudge layout and let browser show latest content. If you prefer precise scrolling,
+            // add JS to set scrollTop = scrollHeight for chatWindowRef.
+            await Task.Delay(20);
+        }
+        catch { }
+    }
+    private MarkupString RenderMessage(string AiResponseText)
+    {
+        if (string.IsNullOrWhiteSpace(AiResponseText))
+        {
+            return (MarkupString)string.Empty;
+        }
+
+        // Configure Markdig with desired extensions (like code blocks, tables)
+        var pipeline = new MarkdownPipelineBuilder()
+            .UseAdvancedExtensions()
+            .Build();
+
+        // Convert the Markdown string to HTML
+        string html = Markdown.ToHtml(AiResponseText, pipeline);
+
+        // Cast to MarkupString to tell Blazor to render the raw HTML
+        return (MarkupString)html;
+    }
+}

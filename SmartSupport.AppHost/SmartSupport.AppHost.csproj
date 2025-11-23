@@ -1,0 +1,19 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.0.0">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UserSecretsId>38fb9136-3b2d-4801-a51d-4018b26621d0</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Aspire.Hosting.Python.Extensions" Version="9.9.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\frontend\frontend\frontend.csproj" />
+  </ItemGroup>
+
+</Project>
