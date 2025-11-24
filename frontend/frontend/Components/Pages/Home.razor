@@ -98,30 +98,30 @@ PSEUDOCODE / PLAN (detailed):
 
             if (response.IsSuccessStatusCode)
             {
-                var raw = await response.Content.ReadAsStringAsync();
-                string replyText;
+                var replyText = await response.Content.ReadAsStringAsync();
+                // string replyText;
 
-                try
-                {
-                    using var doc = JsonDocument.Parse(raw);
-                    if (doc.RootElement.TryGetProperty("reply", out var p) ||
-                        doc.RootElement.TryGetProperty("Reply", out p))
-                    {
-                        replyText = p.GetString() ?? raw;
-                    }
-                    else if (doc.RootElement.ValueKind == JsonValueKind.String)
-                    {
-                        replyText = doc.RootElement.GetString() ?? raw;
-                    }
-                    else
-                    {
-                        replyText = raw;
-                    }
-                }
-                catch
-                {
-                    replyText = raw;
-                }
+                // try
+                // {
+                //     using var doc = JsonDocument.Parse(raw);
+                //     if (doc.RootElement.TryGetProperty("reply", out var p) ||
+                //         doc.RootElement.TryGetProperty("Reply", out p))
+                //     {
+                //         replyText = p.GetString() ?? raw;
+                //     }
+                //     else if (doc.RootElement.ValueKind == JsonValueKind.String)
+                //     {
+                //         replyText = doc.RootElement.GetString() ?? raw;
+                //     }
+                //     else
+                //     {
+                //         replyText = raw;
+                //     }
+                // }
+                // catch
+                // {
+                //     replyText = raw;
+                // }
 
                 messages.Add(new ChatMessage(replyText, "bot"));
             }

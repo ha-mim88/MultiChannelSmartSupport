@@ -24,11 +24,15 @@
     <Compile Include="app\agents\local_lm_studio.py" />
     <Compile Include="app\agents\__init__.py" />
     <Compile Include="app\main.py" />
-    <Compile Include="app\__init__.py" />
+    <Compile Include="app\test\agenttest.py" />
+    <Compile Include="app\tools\zendesk_python_client.py" />
+    <Compile Include="app\tools\__init__.py" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="app\" />
     <Folder Include="app\agents\" />
+    <Folder Include="app\test\" />
+    <Folder Include="app\tools\" />
     <Folder Include="app\pipelines\" />
   </ItemGroup>
   <ItemGroup>
