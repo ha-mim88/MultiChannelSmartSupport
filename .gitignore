@@ -5,6 +5,7 @@
 
 # Local Environment
 .venv/
+.venv/Lib/site-packages/langchain
 
 # User-specific files
 *.rsuser
