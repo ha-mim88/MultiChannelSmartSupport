@@ -2,11 +2,14 @@
 from typing import List, Dict, Any
 from fastapi import FastAPI, HTTPException
 from app.agents import LMStudioChatAgent
-from langchain_core.messages import ToolMessage, HumanMessage, AIMessage, SystemMessage 
 import json
 import traceback
 
 app = FastAPI(title="Smart Support AI Backend")
+
+@app.post("/")
+async def home():
+    return {"message": "hi, how can i help !?!"}
 
 @app.get("/ping")
 def ping():

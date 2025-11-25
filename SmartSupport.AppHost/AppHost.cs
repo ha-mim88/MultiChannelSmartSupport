@@ -10,7 +10,7 @@ builder.AddExecutable(
     args: new[] { "app.main:app", "--host", "0.0.0.0", "--port", "8000" }
 )
 .WithExternalHttpEndpoints()
-.WithUrl("http://localhost:8000/ping");
+.WithUrl("http://localhost:8000/");
 
 
 builder.AddProject<Projects.frontend>("frontend");

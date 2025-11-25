@@ -75,6 +75,7 @@ PSEUDOCODE / PLAN (detailed):
     private List<ChatMessage> messages = new();
     private bool isSending;
     private ElementReference chatWindowRef;
+    private CancellationTokenSource _cancellationTokenSource;
 
     private record ChatMessage(string content, string role = "user");
 
@@ -91,37 +92,14 @@ PSEUDOCODE / PLAN (detailed):
         try
         {
             var dto = new { Message = userText };
-            // Use relative path so it works when app is hosted with the API
+            //Use relative path so it works when app is hosted with the API
             using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
             var response = await httpClient.PostAsJsonAsync(backend + "api/chat", new List<ChatMessage> { new(userText, "user") });
 
 
             if (response.IsSuccessStatusCode)
             {
-                var replyText = await response.Content.ReadAsStringAsync();
-                // string replyText;
-
-                // try
-                // {
-                //     using var doc = JsonDocument.Parse(raw);
-                //     if (doc.RootElement.TryGetProperty("reply", out var p) ||
-                //         doc.RootElement.TryGetProperty("Reply", out p))
-                //     {
-                //         replyText = p.GetString() ?? raw;
-                //     }
-                //     else if (doc.RootElement.ValueKind == JsonValueKind.String)
-                //     {
-                //         replyText = doc.RootElement.GetString() ?? raw;
-                //     }
-                //     else
-                //     {
-                //         replyText = raw;
-                //     }
-                // }
-                // catch
-                // {
-                //     replyText = raw;
-                // }
+                var replyText = await response.Content.ReadAsStringAsync();                
 
                 messages.Add(new ChatMessage(replyText, "bot"));
             }
@@ -140,6 +118,12 @@ PSEUDOCODE / PLAN (detailed):
             await ScrollToBottomAsync();
             StateHasChanged();
         }
+    }
+
+    // Optional method to cancel the streaming request
+    private void CancelStreaming()
+    {
+        _cancellationTokenSource?.Cancel();
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
