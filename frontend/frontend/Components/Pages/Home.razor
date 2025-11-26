@@ -4,6 +4,10 @@
 @using Microsoft.AspNetCore.Components.Web
 @using System.Net
 @using System.Text.RegularExpressions
+@using OpenAI
+@using OpenAI.Chat
+@using System.ClientModel
+@using frontend.Tools
 @inject HttpClient Http
 @inject IConfiguration Configuration
 @rendermode InteractiveServer
@@ -43,7 +47,7 @@ PSEUDOCODE / PLAN (detailed):
         }
         else
         {
-            <button class="send-btn" @onclick="SendMessage">
+            <button class="send-btn" @onclick="SendMessageV2">
                 Send
             </button>
         }
@@ -58,7 +62,7 @@ PSEUDOCODE / PLAN (detailed):
         {
             <div class="row">
                 <div class="message-row @(m.role == "user" ? "user-row" : "bot-row float-end")">
-                    <div class="avatar">@(m.role == "user" ? "You" : "Bot")</div>
+                    <div class="avatar">@(m.role == "user" ? "You" : m.role)</div>
                     <div class="ai-response bubble @(m.role == "user" ? "bubble-user" : "bubble-bot")" style="white-space:pre-wrap; word-break:break-word">
                         @RenderMessage(m.content)
                     </div>
@@ -72,12 +76,12 @@ PSEUDOCODE / PLAN (detailed):
 
 @code {
     private string Message { get; set; } = string.Empty;
-    private List<ChatMessage> messages = new();
+    private List<DisplayChatMessage> messages = new();
     private bool isSending;
     private ElementReference chatWindowRef;
     private CancellationTokenSource _cancellationTokenSource;
 
-    private record ChatMessage(string content, string role = "user");
+    private record DisplayChatMessage(string content, string role = "user");
 
     private async Task SendMessage()
     {
@@ -85,7 +89,7 @@ PSEUDOCODE / PLAN (detailed):
             return;
 
         var userText = Message.Trim();
-        messages.Add(new ChatMessage(userText, "user"));
+        messages.Add(new DisplayChatMessage(userText, "user"));
         Message = string.Empty;
         isSending = true;
         var backend = Configuration["AIBackendHost"];
@@ -94,23 +98,156 @@ PSEUDOCODE / PLAN (detailed):
             var dto = new { Message = userText };
             //Use relative path so it works when app is hosted with the API
             using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
-            var response = await httpClient.PostAsJsonAsync(backend + "api/chat", new List<ChatMessage> { new(userText, "user") });
+            var response = await httpClient.PostAsJsonAsync(backend + "api/chat", new List<DisplayChatMessage> { new(userText, "user") });
 
 
             if (response.IsSuccessStatusCode)
             {
                 var replyText = await response.Content.ReadAsStringAsync();                
 
-                messages.Add(new ChatMessage(replyText, "bot"));
+                messages.Add(new DisplayChatMessage(replyText, "py bot"));
             }
             else
             {
-                messages.Add(new ChatMessage($"Error: {response.StatusCode}", "bot"));
+                messages.Add(new DisplayChatMessage($"Error: {response.StatusCode}", "py bot"));
             }
         }
         catch (Exception ex)
         {
-            messages.Add(new ChatMessage($"Network error: {ex.Message}", "bot"));
+            messages.Add(new DisplayChatMessage($"Network error: {ex.Message}", "py bot"));
+        }
+        finally
+        {
+            isSending = false;
+            await ScrollToBottomAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task SendMessageV2()
+    {
+
+        if (string.IsNullOrWhiteSpace(Message) || isSending)
+            return;
+
+        ChatClient client = new(
+            model: "google/gemma-3-12b",
+            credential: new ApiKeyCredential("lm-studio"),
+            options: new OpenAIClientOptions()
+            {
+                Endpoint = new Uri("http://localhost:1234/v1")
+            }
+        );
+        var userText = Message.Trim();
+        messages.Add(new DisplayChatMessage(userText, "user"));
+        Message = string.Empty;
+        isSending = true;
+        var backend = Configuration["AIBackendHost"];
+        try
+        {
+            var dto = new List<ChatMessage> { new UserChatMessage(userText, "user") };
+
+            ChatCompletionOptions options = new()
+            {
+                Tools = { UserToolFunctions.GetUserListTool, UserToolFunctions.GetUserCountTool, UserToolFunctions.GetSingleUserTool },
+            };
+
+            @* ChatCompletion completion = await client.CompleteChatAsync(dto, options);      *@
+            ChatCompletion completion;
+            bool requiresAction;
+
+            do
+            {
+                requiresAction = false;
+                completion = await client.CompleteChatAsync(dto, options);
+
+                switch (completion.FinishReason)
+                {
+                    case ChatFinishReason.Stop:
+                        {
+                            // Add the assistant message to the conversation history.
+                            dto.Add(new AssistantChatMessage(completion));
+                            break;
+                        }
+
+                    case ChatFinishReason.ToolCalls:
+                        {
+                            // First, add the assistant message with tool calls to the conversation history.
+                            dto.Add(new AssistantChatMessage(completion));
+
+                            // Then, add a new tool message for each tool call that is resolved.
+                            foreach (ChatToolCall toolCall in completion.ToolCalls)
+                            {
+                                switch (toolCall.FunctionName)
+                                {
+                                    case nameof(UserToolFunctions.GetUserCount):
+                                        {
+                                            string toolResult = await UserToolFunctions.GetUserCount();
+                                            dto.Add(new ToolChatMessage(toolCall.Id, toolResult));
+                                            break;
+                                        }
+
+                                    case nameof(UserToolFunctions.GetUsers):
+                                        {
+                                            using JsonDocument argumentsJson = JsonDocument.Parse(toolCall.FunctionArguments);
+                                            bool hassearchUserName = argumentsJson.RootElement.TryGetProperty("searchUserName", out JsonElement searchUserName);
+                                            bool hastop = argumentsJson.RootElement.TryGetProperty("top", out JsonElement top);
+
+                                            @* if (!hasLocation)
+                                            {
+                                                throw new ArgumentNullException(nameof(location), "The location argument is required.");
+                                            } *@
+
+                                            string toolResult = await UserToolFunctions.GetUsers(hassearchUserName ? searchUserName.GetString() : "", hastop ? top.GetInt32() : null);
+                                            dto.Add(new ToolChatMessage(toolCall.Id, toolResult));
+                                            break;
+                                        }
+                                    case nameof(UserToolFunctions.GetSingleUser):
+                                        {
+                                            using JsonDocument argumentsJson = JsonDocument.Parse(toolCall.FunctionArguments);
+                                            bool hassearchUserName = argumentsJson.RootElement.TryGetProperty("searchUserName", out JsonElement searchUserName);
+
+                                            @* if (!hasLocation)
+                                            {
+                                                throw new ArgumentNullException(nameof(location), "The location argument is required.");
+                                            } *@
+
+                                            string toolResult = await UserToolFunctions.GetSingleUser(searchUserName.GetString());
+                                            dto.Add(new ToolChatMessage(toolCall.Id, toolResult));
+                                            break;
+                                        }
+
+                                    default:
+                                        {
+                                            // Handle other unexpected calls.
+                                            throw new NotImplementedException();
+                                        }
+                                }
+                            }
+
+                            requiresAction = true;
+                            break;
+                        }
+
+                    case ChatFinishReason.Length:
+                        throw new NotImplementedException("Incomplete model output due to MaxTokens parameter or token limit exceeded.");
+
+                    case ChatFinishReason.ContentFilter:
+                        throw new NotImplementedException("Omitted content due to a content filter flag.");
+
+                    case ChatFinishReason.FunctionCall:
+                        throw new NotImplementedException("Deprecated in favor of tool calls.");
+
+                    default:
+                        throw new NotImplementedException(completion.FinishReason.ToString());
+                }
+            } while (requiresAction);
+            
+            messages.Add(new DisplayChatMessage(completion?.Content?.FirstOrDefault()?.Text, "C# bot"));
+        }
+        catch (Exception ex)
+        {
+            messages.Add(new DisplayChatMessage($"Network error: {ex.Message}", "C# bot"));
         }
         finally
         {
@@ -130,7 +267,7 @@ PSEUDOCODE / PLAN (detailed):
     {
         if (e.Key == "Enter")
         {
-            await SendMessage();
+            await SendMessageV2();
         }
     }
 
