@@ -1,0 +1,134 @@
+﻿@page "/myassistant"
+@attribute [Authorize]
+
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using frontend.Data
+@using frontend.Entities
+@using frontend.Services
+@inject MyAssistantService Llm
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider Auth
+@inject UserManager<ApplicationUser> UserManager
+@rendermode InteractiveServer
+
+<div class="container-fluid">
+    <div>
+        <div class="display-3">@authState.User.Identity.Name's Assistant</div>
+        <p>Ask questions about your orders and get instant responses.</p>
+    </div>
+    <hr />
+    <div class="d-flex">
+        <div class="" style="width:250px; max-width:300px;">
+            <h3>My Sesssions</h3>
+            <div class="list-group">
+                @foreach(var session in mySessions)
+                {
+                    <div class="list-group-item list-group-item-action @(session.Id == SessionId ? "active" : "")" @onclick="() => LoadSession(session.Id)">
+                        @session.Title
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="flex-fill border-start border-3 border-secondary">
+            <h3>Chat</h3>
+            <div class="chat">
+                @if(currentSession != null && currentSession.ChatHistories.Any())
+                {
+                    <div><strong>Session:</strong> @currentSession.Title</div>
+                    @foreach (var m in currentSession?
+                    .ChatHistories
+                    @* .Where(a => a.Role == "user" || a.Role == "assistant") *@
+                    .ToList())
+                    {
+                        <div class="@m.Role">@m.Content</div>
+                    }
+                }
+                else
+                {
+                    <div><em>Select a session to start chatting.</em></div>
+                }
+            </div>
+
+            <input @bind="newMessage" @bind:event="oninput" placeholder="Ask about your order..." />
+            @if (string.IsNullOrEmpty(newMessage))
+            {
+                <button disabled>Send</button>
+            }
+            else
+            {
+                <button @onclick="Send">Send</button>                
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<AISession> mySessions = new();
+    private string newMessage = "";
+    private int SessionId = 0;
+    private AISession? currentSession;
+    private AuthenticationState authState;
+
+    protected override async Task OnInitializedAsync()
+    {
+        authState = await Auth.GetAuthenticationStateAsync();
+        var userId = UserManager.GetUserId(authState.User);
+
+        mySessions = await Db.AISession
+            .Where(s => s.UserId == userId)
+            .ToListAsync();
+    }
+    private async Task LoadSession(int sessionId)
+    {
+        SessionId = sessionId;
+        currentSession = await Db.AISession.Include(a=>a.ChatHistories)
+            .FirstOrDefaultAsync(m => m.Id == sessionId);
+        StateHasChanged();
+    }
+
+    private async Task Send()
+    {
+        if (SessionId > 0 && currentSession != null)
+        {
+            var reply = await Llm.ChatWithToolsAsync(currentSession.ChatHistories.ToList(), newMessage, SessionId, Db);
+            currentSession.ChatHistories.Add(new AIChatHistory { Role = "user", Content = newMessage });
+            currentSession.ChatHistories.Add(new AIChatHistory { Role = "assistant", Content = reply });
+            newMessage = "";
+            StateHasChanged();
+        } else
+        {
+            // create new session
+            SessionId = await GetOrCreateSession();
+            if (SessionId == 0)
+            {
+                // show some error msg
+                currentSession.ChatHistories.Add(new AIChatHistory { Role = "assistant", Content = "Error creating session. Please try again." });
+                StateHasChanged();
+                return;
+            }
+            var reply = await Llm.ChatWithToolsAsync(new List<AIChatHistory>(), newMessage, SessionId, Db);
+            if (currentSession.ChatHistories == null)
+            {
+                currentSession.ChatHistories = new List<AIChatHistory>();
+            }
+            currentSession.ChatHistories.Add(new AIChatHistory { Role = "user", Content = newMessage });
+            currentSession.ChatHistories.Add(new AIChatHistory { Role = "assistant", Content = reply });
+            newMessage = "";
+            StateHasChanged();
+        }
+    }
+
+    private async Task<int> GetOrCreateSession()
+    {
+        var userId = UserManager.GetUserId(authState.User);
+
+        currentSession = new AISession { UserId = userId, Title = DateTime.Today.ToString("dd-MMM-yy:ddd") };
+        Db.AISession.Add(currentSession);
+        await Db.SaveChangesAsync();
+        currentSession.ChatHistories = new List<AIChatHistory>();
+        SessionId = currentSession.Id;
+        return currentSession.Id;
+    }
+}

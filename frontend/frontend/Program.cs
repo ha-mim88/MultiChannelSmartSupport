@@ -60,6 +60,7 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
 
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<MyAssistantService>();
 
 var app = builder.Build();
 
