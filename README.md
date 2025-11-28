@@ -1,5 +1,8 @@
-# MultiChannelSmartSupport – (work in progress) Simple Production-Ready AI Template for Enterprise Solutions 
-**Pure C# .NET 10 Blazor • 100% Local LLM • Voice + Text • Tool Calling • Analytics • alternative fastapi backend for AI**
+# MultiChannelSmartSupport – Simple Production-Ready AI Template for Enterprise Solutions 
+**Pure C# .NET 10 Blazor • 100% Local LLM • Voice + Text • Tool Calling • Analytics • alternative fastapi backend for AI Services**
+
+## Ths is the First Version (improvement in progress)
+
 GitHub: https://github.com/ha-mim88/MultiChannelSmartSupport.git
 
 https://github.com/user-attachments/assets/your-screenshot-or-gif-here.gif
