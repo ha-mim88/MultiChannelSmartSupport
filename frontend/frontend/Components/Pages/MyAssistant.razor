@@ -101,6 +101,9 @@
             <!-- Input bar -->
             <div class="p-2 border-top bg-light">
                 <div class="d-flex">
+                    <div class="">
+                        <VoiceChatInput OnMessage="HandleUserMessage" @ref="_voiceInput" />
+                    </div>
                     <input class="form-control me-2"
                            @bind="newMessage"
                            @bind:event="oninput"
@@ -122,9 +125,6 @@
                     <button class="btn btn-sm btn-outline-secondary">
                         <i class="bi bi-emoji-smile"></i> Emoji
                     </button>
-                    <button class="btn btn-sm btn-outline-secondary">
-                        <i class="bi bi-mic"></i> Voice
-                    </button>
                 </div>
             </div>
         </div>
@@ -134,6 +134,7 @@
 @code {
     private List<AISession> mySessions = new();
     private string newMessage = "";
+    private string lastReply = "";
     private int SessionId = 0;
     private AISession? currentSession;
     private AuthenticationState authState;
@@ -141,6 +142,19 @@
     [Inject] IJSRuntime JS { get; set; }
     private bool isEditingTitle = false;
     private bool isAIGenerating = false;
+
+    private VoiceChatInput? _voiceInput;
+
+    private async Task HandleUserMessage(string message)
+    {
+        // Your existing send logic
+        newMessage = message;
+        lastReply = "";
+        await Send();
+
+        // Bot speaks back!
+        await _voiceInput.SpeakAsync(lastReply);
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -177,11 +191,13 @@
     {
         var msg = newMessage.Trim();
         newMessage = "";
+        lastReply = "";
         if (SessionId > 0 && currentSession != null)
         {
             isAIGenerating = true;
 
             var reply = await Llm.ChatWithToolsAsync(currentSession.ChatHistories.ToList(), msg, SessionId, Db);
+            lastReply = reply;
             currentSession.ChatHistories.Add(new AIChatHistory { Role = "user", Content = msg });
             currentSession.ChatHistories.Add(new AIChatHistory { Role = "assistant", Content = reply });
             isAIGenerating = false;
@@ -200,6 +216,7 @@
             isAIGenerating = true;
 
             var reply = await Llm.ChatWithToolsAsync(new List<AIChatHistory>(), msg, SessionId, Db);
+            lastReply = reply;
             if (currentSession.ChatHistories == null)
             {
                 currentSession.ChatHistories = new List<AIChatHistory>();

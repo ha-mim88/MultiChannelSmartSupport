@@ -2,4 +2,4 @@
     if (element) {
         element.scrollTop = element.scrollHeight;
     }
-};
+}

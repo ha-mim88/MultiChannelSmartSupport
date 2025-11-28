@@ -1,0 +1,121 @@
+﻿@inject IJSRuntime JS
+
+<div class="voice-input-bar">
+    <input class="d-none" @bind="_currentTranscript" @bind:event="oninput" placeholder="Ask about your order..." />
+    <div class="d-flex">
+
+        @if (_isRecording)
+        {
+            <button @onclick="StopRecording" class="recording">
+                Recording... Stop
+            </button>
+        }
+        else
+        {
+            <button @onclick="StartRecording" class="mic">
+                Microphone
+            </button>
+        }
+        <button @onclick="SendMessage" class="d-none" disabled="@string.IsNullOrEmpty(Message)">Send</button>
+    </div>
+
+</div>
+
+@if (_interimText != "")
+{
+    <div class="interim">...@_interimText</div>
+}
+
+@code {
+    [Parameter] public EventCallback<string> OnMessage { get; set; }
+
+    private string Message { get; set; } = "";
+    private string _currentTranscript = "";
+    private string _interimText = "";
+    private bool _isRecording = false;
+    // private IJSObjectReference? _module;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/speech.js");
+            // Preload voices
+            await JS.InvokeVoidAsync("speech.getVoices");
+        }
+    }
+
+    private async Task StartRecording()
+    {
+        // if (_module is null) return;
+
+        _isRecording = true;
+        _interimText = "";
+        StateHasChanged();
+
+        var success = await JS.InvokeAsync<bool>("speech.startRecording", DotNetObjectReference.Create(this));
+        if (!success)
+        {
+            _isRecording = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task StopRecording()
+    {
+        // if (_module is null) return;
+
+        await JS.InvokeVoidAsync("speech.stopRecording");
+        _isRecording = false;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnInterim(string text)
+    {
+        _interimText = text;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnFinal(string text)
+    {
+        Message = text;
+        _currentTranscript = text;
+        _interimText = "";
+        _isRecording = false;
+        StateHasChanged();
+
+        // Auto-send on clear speech
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            await SendMessage();
+        }
+    }
+
+    [JSInvokable]
+    public void OnError(string error)
+    {
+        Console.WriteLine("Speech error: " + error);
+        _isRecording = false;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnEnd() { _isRecording = false; StateHasChanged(); }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(Message)) return;
+
+        var msg = Message.Trim();
+        await OnMessage.InvokeAsync(msg);
+        Message = "";
+        _currentTranscript = "";
+    }
+
+    public async Task SpeakAsync(string text)
+    {
+        await JS.InvokeVoidAsync("speech.speak", text, "Microsoft Zira - English (United States)");
+    }
+}
