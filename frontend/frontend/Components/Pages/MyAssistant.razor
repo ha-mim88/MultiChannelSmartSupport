@@ -22,6 +22,9 @@
     <div class="d-flex">
         <div class="" style="width:250px; max-width:300px;">
             <h3>My Sesssions</h3>
+            <button class="btn btn-sm btn-primary mb-2" @onclick="async () => { await GetOrCreateSession(); await ScrollToBottom(); }">
+                <i class="bi bi-plus"></i> New Session
+            </button>
             <div class="list-group">
                 @foreach(var session in mySessions)
                 {
@@ -31,35 +34,99 @@
                 }
             </div>
         </div>
-        <div class="flex-fill border-start border-3 border-secondary">
-            <h3>Chat</h3>
-            <div class="chat">
-                @if(currentSession != null && currentSession.ChatHistories.Any())
+        <div class="d-flex flex-column flex-fill border-start border-3 border-secondary">
+            <!-- Header -->
+            <div class="p-2 border-bottom bg-light d-flex align-items-center">
+                <i class="bi bi-chat-dots me-2"></i>
+                <h5 class="mb-0">Chat Session: </h5>
+                @if (currentSession != null)
                 {
-                    <div><strong>Session:</strong> @currentSession.Title</div>
-                    @foreach (var m in currentSession?
-                    .ChatHistories
-                    @* .Where(a => a.Role == "user" || a.Role == "assistant") *@
-                    .ToList())
+                    @if (isEditingTitle){
+                        <div class="d-flex d-inline">
+                            <input class="form-control form-control-sm ms-2"
+                                   @bind="currentSession.Title"
+                                   @bind:event="oninput"
+                                   @onblur="() => { isEditingTitle = false; Db.AISession.Update(currentSession); Db.SaveChanges(); }"
+                                   style="max-width:200px;" />
+                            <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="() => { isEditingTitle = false; Db.AISession.Update(currentSession); Db.SaveChanges(); }">
+                                <i class="bi bi-check-lg"></i> Save
+                            </button>
+                        </div>
+                    } else
                     {
-                        <div class="@m.Role">@m.Content</div>
+                        <h5 class="d-inline">@currentSession.Title</h5>
+                        <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="() => EditSessionTitle()">
+                            <i class="bi bi-pencil"></i> Edit
+                        </button>                        
+                    }
+                }
+            </div>
+
+            <!-- Chat history -->
+            <div class="chat flex-fill overflow-auto p-3" style="height:50vh;" @ref="chatContainer">
+                @if (currentSession != null && currentSession.ChatHistories.Any())
+                {
+                    @foreach (var m in currentSession.ChatHistories.ToList())
+                    {
+                        <div class="mb-3 d-flex @(m.Role == "user" ? "justify-content-end" : "justify-content-start")">
+                            <div class="chat-bubble @(m.Role == "user" ? "user-bubble" : "assistant-bubble") d-flex align-items-center">
+                                @if (m.Role == "user")
+                                {
+                                    <i class="bi bi-person-circle me-2"></i>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-robot me-2"></i>
+                                }
+                                <span style="max-width: 40vw; overflow-x:auto;">@m.Content</span>
+                            </div>
+                        </div>
                     }
                 }
                 else
                 {
-                    <div><em>Select a session to start chatting.</em></div>
+                    <div class="text-muted"><em>Select a session to start chatting.</em></div>
+                }
+                @if (isAIGenerating)
+                {
+                    <div class="mb-3 d-flex justify-content-start)">
+                        <div class="chat-bubble assistant-bubble d-flex align-items-center">
+                            <i class="bi bi-robot me-2"></i>
+                            <span style="max-width: 40vw; overflow-x:auto;">...<i>generating</i>...</span>
+                        </div>
+                    </div>                    
                 }
             </div>
 
-            <input @bind="newMessage" @bind:event="oninput" placeholder="Ask about your order..." />
-            @if (string.IsNullOrEmpty(newMessage))
-            {
-                <button disabled>Send</button>
-            }
-            else
-            {
-                <button @onclick="Send">Send</button>                
-            }
+            <!-- Input bar -->
+            <div class="p-2 border-top bg-light">
+                <div class="d-flex">
+                    <input class="form-control me-2"
+                           @bind="newMessage"
+                           @bind:event="oninput"
+                           @onkeydown="HandleKeyDown"
+                           placeholder="Ask about your order..." />
+
+                    <button class="btn btn-primary"
+                            @onclick="Send"
+                            disabled="@string.IsNullOrEmpty(newMessage)">
+                        <i class="bi bi-send"></i> Send
+                    </button>
+                </div>
+
+                <!-- Message options -->
+                <div class="mt-2 d-flex justify-content-between text-muted">
+                    <button class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-paperclip"></i> Attach
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-emoji-smile"></i> Emoji
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-mic"></i> Voice
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -70,6 +137,22 @@
     private int SessionId = 0;
     private AISession? currentSession;
     private AuthenticationState authState;
+    private ElementReference chatContainer;
+    [Inject] IJSRuntime JS { get; set; }
+    private bool isEditingTitle = false;
+    private bool isAIGenerating = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (chatContainer.Context != null)
+        {
+            await JS.InvokeVoidAsync("scrollToBottom", chatContainer);
+        }
+    }
+    private async Task ScrollToBottom()
+    {
+        await JS.InvokeVoidAsync("scrollToBottom", chatContainer);
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -78,6 +161,7 @@
 
         mySessions = await Db.AISession
             .Where(s => s.UserId == userId)
+            .OrderByDescending(a=> a.Id)
             .ToListAsync();
     }
     private async Task LoadSession(int sessionId)
@@ -86,17 +170,21 @@
         currentSession = await Db.AISession.Include(a=>a.ChatHistories)
             .FirstOrDefaultAsync(m => m.Id == sessionId);
         StateHasChanged();
+        await ScrollToBottom();
     }
 
     private async Task Send()
     {
+        var msg = newMessage.Trim();
+        newMessage = "";
         if (SessionId > 0 && currentSession != null)
         {
-            var reply = await Llm.ChatWithToolsAsync(currentSession.ChatHistories.ToList(), newMessage, SessionId, Db);
-            currentSession.ChatHistories.Add(new AIChatHistory { Role = "user", Content = newMessage });
+            isAIGenerating = true;
+
+            var reply = await Llm.ChatWithToolsAsync(currentSession.ChatHistories.ToList(), msg, SessionId, Db);
+            currentSession.ChatHistories.Add(new AIChatHistory { Role = "user", Content = msg });
             currentSession.ChatHistories.Add(new AIChatHistory { Role = "assistant", Content = reply });
-            newMessage = "";
-            StateHasChanged();
+            isAIGenerating = false;
         } else
         {
             // create new session
@@ -108,16 +196,20 @@
                 StateHasChanged();
                 return;
             }
-            var reply = await Llm.ChatWithToolsAsync(new List<AIChatHistory>(), newMessage, SessionId, Db);
+
+            isAIGenerating = true;
+
+            var reply = await Llm.ChatWithToolsAsync(new List<AIChatHistory>(), msg, SessionId, Db);
             if (currentSession.ChatHistories == null)
             {
                 currentSession.ChatHistories = new List<AIChatHistory>();
             }
-            currentSession.ChatHistories.Add(new AIChatHistory { Role = "user", Content = newMessage });
+            currentSession.ChatHistories.Add(new AIChatHistory { Role = "user", Content = msg });
             currentSession.ChatHistories.Add(new AIChatHistory { Role = "assistant", Content = reply });
-            newMessage = "";
-            StateHasChanged();
+            isAIGenerating = false;
         }
+        StateHasChanged();
+        await ScrollToBottom();
     }
 
     private async Task<int> GetOrCreateSession()
@@ -129,6 +221,25 @@
         await Db.SaveChangesAsync();
         currentSession.ChatHistories = new List<AIChatHistory>();
         SessionId = currentSession.Id;
+
+        mySessions = await Db.AISession
+            .Where(s => s.UserId == userId)
+            .OrderByDescending(a => a.Id)
+            .ToListAsync();
         return currentSession.Id;
+    }
+
+    private void EditSessionTitle()
+    {
+        isEditingTitle = true;
+
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await Send();
+        }
     }
 }

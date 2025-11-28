@@ -206,7 +206,9 @@ namespace frontend.Services
                     await db.SaveChangesAsync();
 
                     // Add tool result back to messages + re-call LLM for final response
-                    messages.Add(new AssistantChatMessage(response.Value.Content?[0]?.Text ?? ""));
+                    if(response.Value.Content?[0]?.Text != null)
+                        messages.Add(new AssistantChatMessage(response.Value.Content?[0]?.Text ?? ""));
+
                     messages.AddRange(toolCallMessages);
 
                     var finalResponse = await chatClient.CompleteChatAsync(messages, options);

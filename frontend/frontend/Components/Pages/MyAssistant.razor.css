@@ -1,0 +1,16 @@
+﻿.chat-bubble {
+    padding: 0.5rem 0.75rem;
+    border-radius: 1rem;
+    max-width: 70%;
+    word-wrap: break-word;
+}
+
+.user-bubble {
+    background-color: #0078d4; /* Copilot blue */
+    color: white;
+}
+
+.assistant-bubble {
+    background-color: #f3f2f1; /* Neutral gray */
+    color: #323130;
+}
