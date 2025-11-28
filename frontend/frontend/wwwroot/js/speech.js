@@ -1,6 +1,7 @@
 ﻿window.speech = {
     recognition: null,
     isRecording: false,
+    silenceTimeout: null,
 
     startRecording: function (dotNetHelper) {
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -10,8 +11,8 @@
 
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         this.recognition = new SpeechRecognition();
-        this.recognition.continuous = false;
-        this.recognition.interimResults = true;
+        this.recognition.continuous = true;       // keep listening until stopped
+        this.recognition.interimResults = true;   // return partial results
         this.recognition.lang = 'en-US';
 
         this.recognition.onresult = (event) => {
@@ -31,7 +32,26 @@
         };
 
         this.recognition.onerror = (e) => dotNetHelper.invokeMethodAsync('OnError', e.error);
-        this.recognition.onend = () => dotNetHelper.invokeMethodAsync('OnEnd');
+
+        // 👇 Wait 2 seconds after speech ends before stopping
+        this.recognition.onspeechend = () => {
+            clearTimeout(this.silenceTimeout);
+            this.silenceTimeout = setTimeout(() => {
+                if (this.isRecording) {
+                    this.stopRecording();
+                    dotNetHelper.invokeMethodAsync('OnEnd');
+                }
+            }, 2000);
+        };
+
+        // If speech resumes, cancel the pending stop
+        this.recognition.onspeechstart = () => {
+            clearTimeout(this.silenceTimeout);
+        };
+
+        this.recognition.onend = () => {
+            dotNetHelper.invokeMethodAsync('OnEnd');
+        };
 
         this.recognition.start();
         this.isRecording = true;
@@ -42,6 +62,7 @@
         if (this.recognition && this.isRecording) {
             this.recognition.stop();
             this.isRecording = false;
+            clearTimeout(this.silenceTimeout);
         }
     },
 
@@ -60,6 +81,13 @@
         utterance.pitch = 1.0;
 
         window.speechSynthesis.speak(utterance);
+        return true;
+    },
+
+    cancelSpeak: function () {
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+        }
     },
 
     getVoices: function () {

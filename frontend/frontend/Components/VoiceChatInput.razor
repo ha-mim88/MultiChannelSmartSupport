@@ -1,30 +1,44 @@
 ﻿@inject IJSRuntime JS
+@rendermode InteractiveServer
 
-<div class="voice-input-bar">
-    <input class="d-none" @bind="_currentTranscript" @bind:event="oninput" placeholder="Ask about your order..." />
-    <div class="d-flex">
+<div class="d-flex">
+    <div class="voice-input-bar">
+        <input class="d-none" @bind="_currentTranscript" @bind:event="oninput" placeholder="Ask about your order..." />
+        <div class="d-flex">
 
-        @if (_isRecording)
-        {
-            <button @onclick="StopRecording" class="recording">
-                Recording... Stop
-            </button>
-        }
-        else
-        {
-            <button @onclick="StartRecording" class="mic">
-                Microphone
-            </button>
-        }
-        <button @onclick="SendMessage" class="d-none" disabled="@string.IsNullOrEmpty(Message)">Send</button>
+            @if (_isRecording)
+            {
+                <button @onclick="StopRecording" class="recording">
+                    <span class="text-success">Recording...</span> <span class="text-danger">Stop</span>
+                </button>
+            }
+            else
+            {
+                <button @onclick="StartRecording" class="mic text-primary">
+                    Microphone
+                </button>
+            }
+            <button @onclick="SendMessage" class="d-none" disabled="@string.IsNullOrEmpty(Message)">Send</button>
+        </div>
+
     </div>
 
+    @if (_interimText != "")
+    {
+        <div class="interim flex-fill">... @_interimText</div>
+    }
+    @* <div class="d-flex float-end">
+        @if (_isSpeaking)
+        {
+            <div class="text-success">
+                Speaking...
+            </div>
+            <button class="btn btn-sm btn-outline-danger ms-2" @onclick="async () => { await CancelSpeechAsync(); }" title="Stop speaking">
+                <i class="bi bi-stop"></i> stop
+            </button>
+        }
+    </div> *@
 </div>
-
-@if (_interimText != "")
-{
-    <div class="interim">...@_interimText</div>
-}
 
 @code {
     [Parameter] public EventCallback<string> OnMessage { get; set; }
@@ -33,6 +47,8 @@
     private string _currentTranscript = "";
     private string _interimText = "";
     private bool _isRecording = false;
+
+    private bool _isSpeaking = false;
     // private IJSObjectReference? _module;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -116,6 +132,18 @@
 
     public async Task SpeakAsync(string text)
     {
-        await JS.InvokeVoidAsync("speech.speak", text, "Microsoft Zira - English (United States)");
+        _isSpeaking = true;
+        var res = await JS.InvokeAsync<bool>("speech.speak", text, "Microsoft Zira - English (United States)");
+        if(res)
+        {
+            _isSpeaking = false;
+            StateHasChanged();
+        }
+    }
+    public async Task CancelSpeechAsync()
+    {
+        await JS.InvokeVoidAsync("speech.cancelSpeak");
+        _isSpeaking = false;
+        StateHasChanged();
     }
 }
