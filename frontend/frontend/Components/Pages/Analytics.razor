@@ -1,0 +1,187 @@
+﻿@page "/analytics"
+@attribute [Authorize]  
+@using ChartJs.Blazor.PieChart
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using frontend.Data
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider Auth
+@inject UserManager<ApplicationUser> UserManager
+@inject IJSRuntime JS
+
+@rendermode InteractiveServer
+
+<PageTitle>Analytics Dashboard</PageTitle>
+
+<div class="dashboard">
+    <h1>SmartSupport Analytics</h1>
+    <div class="grid d-flex">
+        <div class="card p-2 me-2 mb-2">
+            <h3>Total Token Usage</h3>
+            <h2>@stats.TotalTokenUsage</h2>
+            <small>+@stats.TodayTokenUsage today</small>
+        </div>
+        <div class="card p-2 me-2 mb-2">
+            <h3>Total Conversations</h3>
+            <h2>@stats.TotalConversations</h2>
+            <small>+@stats.TodayNew today</small>
+        </div>
+        <div class="card p-2 me-2 mb-2">
+            <h3>Avg Handle Time</h3>
+            <h2>@(stats.AvgHandleTime?.ToString("mm\\:ss") ?? "N/A")</h2>
+        </div>
+        <div class="card p-2 me-2 mb-2">
+            <h3>Resolution Rate</h3>
+            <h2>@($"{stats.ResolutionRate:F1}%")</h2>
+            <div class="gauge" style="background: conic-gradient(green @stats.ResolutionRate%, lightgray @stats.ResolutionRate% 100%)"></div>
+        </div>
+        <div class="card p-2 me-2 mb-2">
+            <h3>Tool Usage</h3>
+            <h2>@stats.TotalToolCalls</h2>
+            <small>@($"{stats.ToolUsageRate:F1}%") of messages</small>
+        </div>
+    </div>
+
+    <h2>Tool Usage Breakdown</h2>
+    <div class="pie-chart">
+        <PieChart  Config="@pieConfig" />
+    </div>
+
+    <h2>Top Orders Asked</h2>
+    <table class="table">
+        <thead><tr><th>Order ID</th><th>Times Asked</th></tr></thead>
+        <tbody>
+            @foreach (var o in topOrders)
+            {
+                <tr><td>@o.OrderId</td><td>@o.Count</td></tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private AnalyticsStats stats = new();
+    private PieConfig pieConfig = new();
+    private object pieData = new { };
+    private object pieOptions = new { responsive = true };
+    private List<TopOrder> topOrders = new();
+    private AuthenticationState authState;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+        }
+        // Trigger chart render
+        await JS.InvokeVoidAsync("eval", "setTimeout(() => window.dispatchEvent(new Event('resize')), 100)");
+    }
+    protected override async Task OnInitializedAsync()
+    {
+        authState = await Auth.GetAuthenticationStateAsync();
+        stats = await CalculateStats();
+        topOrders = await GetTopOrders();
+        
+        // pieData = new
+        // {
+        //     labels = new[] { "Used Tool", "No Tool" },
+        //     datasets = new[] { new {
+        //         data = new[] { stats.TotalToolCalls, stats.TotalMessages - stats.TotalToolCalls },
+        //         backgroundColor = new[] { "#10b981", "#e5e7eb" }
+        //     }}
+        // };
+
+        pieConfig = new PieConfig
+        {
+            Options = new PieOptions
+            {
+                Responsive = true,
+                Title = new OptionsTitle { Display = true, Text = "Tool Usage" }
+            }
+        };
+
+        pieConfig.Data.Labels.Add("Used Tool");
+        pieConfig.Data.Labels.Add("No Tool");
+
+        var dataset = new PieDataset<int>(new[] { stats.TotalToolCalls, stats.TotalMessages - stats.TotalToolCalls })
+        {
+            BackgroundColor = new[] { "#10b981", "#e5e7eb" }
+        };
+        pieConfig.Data.Datasets.Add(dataset);
+    }
+    private async Task UpdateCharts()
+    {
+        // update base pie chart
+
+    }
+    private async Task<AnalyticsStats> CalculateStats()
+    {
+        var all = await Db.ConversationAnalytics.ToListAsync();
+        var today = DateTime.UtcNow.Date;
+
+        var resolvedCount = all.Count(a => a.Resolved && !a.HandoffToHuman);
+        var totalConv = all.Count;
+        var todayNew = all.Count(a => a.StartedAt.Date == today);
+
+        var durations = all.Where(a => a.EndedAt.HasValue)
+            .Select(a => (a.EndedAt.Value - a.StartedAt).TotalSeconds)
+            .ToList();
+
+        return new AnalyticsStats
+        {
+            TotalConversations = totalConv,
+            TodayNew = todayNew,
+            ResolutionRate = totalConv > 0 ? (resolvedCount * 100.0 / totalConv) : 0,
+            AvgHandleTime = durations.Any() ? TimeSpan.FromSeconds(durations.Average()) : null,
+            TotalToolCalls = all.Sum(a => a.ToolCalls),
+            TotalMessages = await Db.AIChatHistory.CountAsync(),
+            ToolUsageRate = all.Sum(a => a.ToolCalls) * 100.0 / Math.Max(1, await Db.AIChatHistory.CountAsync()),
+            TotalTokenUsage = Db.AIChatHistory.Sum(a => a.TokenUsage),
+            TodayTokenUsage = Db.AIChatHistory.Where(a => a.CreatedAt.Date == today).Sum(a => a.TokenUsage)
+        };
+    }
+
+    private async Task<List<TopOrder>> GetTopOrders()
+    {
+        return await Db.AIChatHistory
+            .Where(m => m.Role == "tool" && m.Content.Contains("order_id"))
+            .Select(m => m.Content)
+            .ToListAsync()
+            .ContinueWith(t =>
+            {
+                var dict = new Dictionary<string, int>();
+                foreach (var c in t.Result)
+                {
+                    var match = System.Text.RegularExpressions.Regex.Match(c, @"order_id\D*(\d+)");
+                    if (match.Success)
+                    {
+                        var id = match.Groups[1].Value;
+                        dict[id] = dict.GetValueOrDefault(id) + 1;
+                    }
+                }
+                return dict.OrderByDescending(x => x.Value)
+                           .Take(5)
+                           .Select(x => new TopOrder { OrderId = x.Key, Count = x.Value })
+                           .ToList();
+            });
+    }
+
+    record AnalyticsStats
+    {
+        public int TotalConversations { get; set; }
+        public int TodayNew { get; set; }
+        public double ResolutionRate { get; set; }
+        public TimeSpan? AvgHandleTime { get; set; }
+        public int TotalToolCalls { get; set; }
+        public int TotalMessages { get; set; }
+        public double ToolUsageRate { get; set; }
+        public int TotalTokenUsage { get; set; }
+        public int TodayTokenUsage { get; set; }
+    }
+
+    record TopOrder
+    {
+        public string OrderId { get; set; } = "";
+        public int Count { get; set; }
+    }
+}

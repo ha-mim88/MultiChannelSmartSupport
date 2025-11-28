@@ -219,9 +219,10 @@
 
             var reply = await Llm.ChatWithToolsAsync(currentSession.ChatHistories.ToList(), msg, SessionId, Db);
             lastReply = reply;
-            currentSession.ChatHistories.Add(new AIChatHistory { Role = "user", Content = msg });
-            currentSession.ChatHistories.Add(new AIChatHistory { Role = "assistant", Content = reply });
+            // currentSession.ChatHistories.Add(new AIChatHistory { Role = "user", Content = msg });
+            // currentSession.ChatHistories.Add(new AIChatHistory { Role = "assistant", Content = reply });
             isAIGenerating = false;
+            StateHasChanged();
         } else
         {
             // create new session
@@ -242,11 +243,11 @@
             {
                 currentSession.ChatHistories = new List<AIChatHistory>();
             }
-            currentSession.ChatHistories.Add(new AIChatHistory { Role = "user", Content = msg });
-            currentSession.ChatHistories.Add(new AIChatHistory { Role = "assistant", Content = reply });
+            // currentSession.ChatHistories.Add(new AIChatHistory { Role = "user", Content = msg });
+            // currentSession.ChatHistories.Add(new AIChatHistory { Role = "assistant", Content = reply });
             isAIGenerating = false;
+            StateHasChanged();
         }
-        StateHasChanged();
         await ScrollToBottom();
     }
 

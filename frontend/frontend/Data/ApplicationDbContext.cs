@@ -8,4 +8,6 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 {
     public DbSet<AISession> AISession => Set<AISession>();
     public DbSet<AIChatHistory> AIChatHistory => Set<AIChatHistory>();
+    public DbSet<ConversationAnalytics> ConversationAnalytics => Set<ConversationAnalytics>();
+
 }

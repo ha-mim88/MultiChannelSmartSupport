@@ -8,6 +8,7 @@ namespace frontend.Entities
         public string Role { get; set; } = string.Empty;
         public string Content { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public int TokenUsage { get; set; } = 0;
         public bool Removed { get; set; }
 
 

@@ -2,6 +2,7 @@
 using frontend.Entities;
 using frontend.Tools;
 using Humanizer;
+using Microsoft.EntityFrameworkCore;
 using OllamaSharp.Tools;
 using OpenAI;
 using OpenAI.Assistants;
@@ -66,10 +67,14 @@ namespace frontend.Services
             ApplicationDbContext db)
         {
             // Save user message
-            var userMsg = new AIChatHistory { AISessionId = aiSessionId, Role = "user", Content = userMessage, CreatedAt = DateTime.UtcNow };
+            var userMsg = new AIChatHistory { AISessionId = aiSessionId, Role = "user", Content = userMessage, CreatedAt = DateTime.UtcNow, TokenUsage = 0 };
             db.AIChatHistory.Add(userMsg);
             await db.SaveChangesAsync();
             history.Add(userMsg);
+
+            var session = await db.AISession.FindAsync(aiSessionId);
+            var analytics = await db.ConversationAnalytics
+                .FirstOrDefaultAsync(a => a.SessionId == aiSessionId);
 
             // Build full context
             var messages = new List<ChatMessage>();
@@ -199,6 +204,7 @@ namespace frontend.Services
                         AISessionId = aiSessionId,
                         Role = "tool",
                         Content = JsonSerializer.Serialize(toolCallMessages),
+                        TokenUsage = 0,
                         CreatedAt = DateTime.UtcNow
                     };
 
@@ -220,10 +226,33 @@ namespace frontend.Services
                         AISessionId = aiSessionId,
                         Role = "assistant",
                         Content = finalReply,
+                        TokenUsage = (response.Value.Usage?.TotalTokenCount ?? 0) + (finalResponse.Value.Usage?.TotalTokenCount ?? 0),
                         CreatedAt = DateTime.UtcNow
                     };
                     db.AIChatHistory.Add(assistantDbMsg);
+
+                    #region analytics
+                    if (analytics == null)
+                    {
+                        analytics = new ConversationAnalytics
+                        {
+                            SessionId = aiSessionId,
+                            UserId = session.UserId,
+                            StartedAt = DateTime.UtcNow,
+                            MessageCount = 1,
+                            ToolCalls = response.Value.ToolCalls.Count
+                        };
+                        db.ConversationAnalytics.Add(analytics);
+                    }
+                    else
+                    {
+                        analytics.MessageCount++;
+                        analytics.ToolCalls += response.Value.ToolCalls.Count;
+                        analytics.EndedAt = DateTime.UtcNow;
+                    }
+                    #endregion
                     await db.SaveChangesAsync();
+
 
                     return finalReply;
                 }
@@ -235,9 +264,30 @@ namespace frontend.Services
                     AISessionId = aiSessionId,
                     Role = "assistant",
                     Content = directReply,
+                    TokenUsage = response.Value.Usage?.TotalTokenCount ?? 0,
                     CreatedAt = DateTime.UtcNow
                 };
                 db.AIChatHistory.Add(assistantMsg);
+
+                #region analytics for direct reply
+                if (analytics == null)
+                {
+                    analytics = new ConversationAnalytics
+                    {
+                        SessionId = aiSessionId,
+                        UserId = session.UserId,
+                        StartedAt = DateTime.UtcNow,
+                        MessageCount = 1,
+                        ToolCalls = response.Value.Usage?.TotalTokenCount ?? 0
+                    };
+                    db.ConversationAnalytics.Add(analytics);
+                }
+                else
+                {
+                    analytics.MessageCount++;
+                    analytics.EndedAt = DateTime.UtcNow;
+                }
+                #endregion
                 await db.SaveChangesAsync();
 
                 return directReply;
