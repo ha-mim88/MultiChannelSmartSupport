@@ -1,6 +1,4 @@
-# MultiChannelSmartSupport
-
-# MultiChannelSmartSupport – Production-Ready Voice-First AI Assistant  
+# MultiChannelSmartSupport – (work in progress) Simple Production-Ready AI Template for Enterprise Solutions 
 **Pure C# .NET 10 Blazor • 100% Local LLM • Voice + Text • Tool Calling • Analytics • alternative fastapi backend for AI**
 GitHub: https://github.com/ha-mim88/MultiChannelSmartSupport.git
 
@@ -8,18 +6,11 @@ https://github.com/user-attachments/assets/your-screenshot-or-gif-here.gif
 
 ### The Only Full-Stack, Voice-Enabled, Offline-Capable AI Assistant Template Built Entirely in C#
 
-
-Perfect starting point for:
-- Enterprise/Personal internal assistants
-- Customer support bots
-- Healthcare / banking virtual agents
-- Any regulated environment requiring data privacy
-
-## Features (All 100% Working)
+## Features
 
 | Feature                                 | Status | Details |
 |----------------------------------------|--------|-------|
-| .NET 10 Blazor Server + Identity       | Done   | Full auth, roles, roles, email login |
+| .NET 10 Blazor Server + Identity + Aspire       | Done   | Full auth, roles, roles, email login |
 | Local LLM via LM Studio (OpenAI compatible) | Done   | Zero cost, runs offline |
 | OpenAI fallback (just flip a switch)   | Done   | Production ready in seconds |
 | Real tool calling (check_order + extensible) | Done   | Full round-trip with DB logging |
@@ -46,22 +37,27 @@ dotnet run --project SmartSupport.AppHost
 https://localhost:5269
 ```
 
-## Project Structure
+## Project Structure (important directories)
 
 ```
-SmartSupport/
-├── SmartSupport.AppHost          # Aspire orchestrator
-├── SmartSupport.Frontend         Blazor Server (UI + API)
-├── SmartSupport.ServiceDefaults  Shared config
-├── SmartSupport.Models           EF Core models
-├── Services/
-│   └── LlmService.cs             Core AI + tool calling logic
-├── Components/
-│   └── VoiceChatInput.razor      Voice in + TTS out
-├── Pages/
-│   ├── MyAssistant.razor         Main chat with session sidebar
-│   └── Analytics.razor           Live dashboard with ApexCharts
-└── wwwroot/js/speech.js          Speech recognition + TTS interop
+SmartSupport (Solution)
+├── SmartSupport.AppHost                # .NET Aspire orchestrator
+├── SmartSupport.ServiceDefaults       	# Shared logging, config, health checks
+├── SmartSupport.Frontend               # Blazor Server (UI + API + C# AI agents with tools, 2 different pattern of tool implementatino)
+│   ├── Components/						# has the pages and components 
+│   ├── Data/                           # ApplicationDbContext
+│   ├── Entities/                       # EF Core models
+│   ├── Pages/
+│   │   ├── Home.razor           		# sample test chat
+│   │   ├── MyAssistant.razor           # Main chat + session sidebar
+│   │   └── Analytics.razor             # Live dashboard with charts
+│   ├── Services/
+│   │   ├── MyAssistantService.cs		# Core AI, tool calling, memory
+│   │   └── UserService.cs
+│   ├── Tools/
+│   │   └── UserToolFunctions.cs		# another way of implementing tools (suitable for certain situatios) utilizes Extension/ServiceLocator
+├── SmartSupport.Frontend.Client        # Blazor Client
+├── SmartSupport.fastapi-backend        # Python FastAPI backend to run AI Agents (alternative and for those workloads where python is the best choice)
 ```
 
 ## Configuration (appsettings.json)
@@ -94,14 +90,6 @@ COPY bin/Release/net10.0/publish/ /app
 WORKDIR /app
 ENTRYPOINT ["dotnet", "SmartSupport.Frontend.dll"]
 ```
-
-## Roadmap / Easy Extensions
-
-- Plug in real Zendesk / Salesforce / SAP / TMS
-- Add Whisper.cpp for 100% offline voice
-- Add SignalR real-time agent handoff
-- Export chat as PDF
-- Multi-language (just change voice + lang code)
 
 ## License
 
